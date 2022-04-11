@@ -1,8 +1,26 @@
-use crate::dataframe::Data;
-use std::error::Error;
 use chrono::prelude::*;
+use std::process::exit;
+use std::error::Error;
+
+// importing Data struct
+use dataframe::Data;
+
 
 const CSV_PATH: &str = "./csv/weight_data.csv";
+
+pub fn sel_option(args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    let opt: &str = &args[1];
+
+    match opt {
+        "print" => print()?,
+        "input" => input(&args[2])?,
+        "modify"=> modify(&args[2], &args[3])?,
+        _       => exit(1),
+    };
+
+    Ok(())
+}
+
 
 pub fn print() -> Result<(), Box<dyn Error>>{
     let records: Vec<Data> = get_records()?;
@@ -49,7 +67,7 @@ pub fn modify(arg_id: &str, arg_weight: &str) -> Result<(), Box<dyn Error>> {
 
 
 fn write_records(records: Vec<Data>) -> Result<(), Box<dyn Error>> {
-    let mut wtr = Csv::Writer::from_path(CSV_PATH)?;
+    let mut wtr = csv::Writer::from_path(CSV_PATH)?;
 
     for record in records {
         wtr.serialize(&record)?;
@@ -60,11 +78,11 @@ fn write_records(records: Vec<Data>) -> Result<(), Box<dyn Error>> {
 }
 
 fn get_records() -> Result<Vec<Data>, Box<dyn Error>> {
-    let mut rdr = Csv::Reader::from_path(CSV_PATH)?;
+    let mut rdr = csv::Reader::from_path(CSV_PATH)?;
     let records: Vec<Data> = rdr
         .deserialize()
         .collect::
-        <Result<Vec<Data>, Csv::Error>>()?;
+        <Result<Vec<Data>, csv::Error>>()?;
 
     Ok(records)
 }
