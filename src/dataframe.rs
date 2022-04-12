@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)] #[allow(unused)]
 pub struct Data {
     pub id: u32,
     pub date: String,
