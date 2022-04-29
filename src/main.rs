@@ -7,9 +7,9 @@ mod cmds;
 mod app;
 
 fn main() {
-    match cmds::parse() {
-        Ok(()) => println!("..done!"),
-        Err(e) => panic!("{}", e),
-    };
+	match cmds::parse() {
+		Ok(_) => {},
+		Err(e) => panic!("{}", e),
+	};
 }
 

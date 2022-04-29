@@ -1,37 +1,19 @@
+use crate::clap::Parser;
 use std::error::Error;
+
 use crate::app;
+use crate::dataframe::{Args, Options};
 
-pub fn parse() -> Result<(), Box<dyn Error >> {
-    let cmd = clap::Command::new("weight_cli")
-        .subcommand_required(true)
-        .subcommands(
-            vec![
-                clap::Command::new("print"),
-                clap::Command::new("input"),
-                clap::Command::new("modify"),
-                clap::Command::new("delete"),
-            ]);
+pub fn parse() -> Result<(), Box<dyn Error>> {
+	let args = Args::parse();
 
-    let matches = cmd.get_matches();
-    let option = match matches.subcommand() {
-        Some(("print",  _)) => "print",
-        Some(("input",  _)) => "input",
-        Some(("modify", _)) => "modify",
-        Some(("delete", _)) => "delete",
-        _ => unreachable!("Invalid option"),
-    };
+	match args.option {
+		Options::Print {} => app::print()?,
+		Options::Input { weight } => app::input(weight)?,
+		Options::Modify { id, weight } => app::modify(id, weight)?,
+		Options::Delete { id } => app::delete(id)?,
+		_ => eprintln!("Invalid option"),
+	};
 
-    match option {
-        "print" => app::print()?,
-        "input" => app::input()?,
-        "modify"=> app::modify()?,
-        "delete"=> app::delete()?,
-        _       => println!("Invalid option"),
-    };
-
-    Ok(())
-
+	Ok(())
 }
-
-
-
