@@ -2,9 +2,10 @@ use crate::clap::{Parser, Subcommand};
 use crate::serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Data {
+pub struct Record {
 	pub id: u32,
 	pub date: String,
+	pub week: i64,
 	pub weight: f32,
 }
 
@@ -22,8 +23,12 @@ pub struct Args {
 
 #[derive(Subcommand)]
 pub enum Options {
-	/// Prints existing data
-	Print,
+	/// Displays all existing data
+	Display,
+	/// Displays all records
+	Records,
+	/// Displays a summary of the data
+	Summary,
 	/// Deletes a record
 	Delete {
 		#[clap(short, long)]
@@ -42,3 +47,4 @@ pub enum Options {
 		weight: f32,
 	},
 }
+

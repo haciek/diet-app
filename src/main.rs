@@ -3,11 +3,11 @@ extern crate clap;
 extern crate csv;
 
 mod dataframe;
-mod cmds;
+mod args;
 mod app;
 
 fn main() {
-	match cmds::parse() {
+	match args::parse() {
 		Ok(_) => {},
 		Err(e) => panic!("{}", e),
 	};
