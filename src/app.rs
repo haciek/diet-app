@@ -1,187 +1,163 @@
+use crate::serde::{Deserialize, Serialize};
 use chrono::{Datelike, NaiveDate, TimeZone, Utc};
 use std::{
-	collections::HashMap,
-	env,
-	error::Error,
 	fs::{create_dir, File},
+	collections::HashMap,
+	error::Error,
 	path::Path,
+	env,
 };
 
-use crate::dataframe::Record;
-
-const OS_DIR: &str = {
-	match option_env!("XDG_CONFIG_HOME") {
-		None => env!("HOME"),
-		Some(dir) => dir,
-	}
-};
-const CSV_DIR_NAME: &str = "wtcli";
-const CSV_FILE_NAME: &str = "weight-data.csv";
-
-pub fn display() -> Result<(), Box<dyn Error>> {
-	summary()?;
-	records()?;
-	Ok(())
+#[derive(Debug, Deserialize, Serialize)]
+struct Record {
+	id: u32,
+	date: String,
+	week: i64,
+	weight: f32,
 }
 
-pub fn records() -> Result<(), Box<dyn Error>> {
-	let records: &Vec<Record> = &get_records()?;
-
-	println!("\n\tId\tDate\t\tWeek\tWeight(kg)");
-	for record in records.iter() {
-		println!(
-			"\t{}\t{}\t{}\t{}",
-			&record.id, &record.date, &record.week, &record.weight
-		);
-	}
-
-	Ok(())
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CsvData {
+	filepath: String,
+	records: Vec<Record>,
 }
 
-pub fn summary() -> Result<(), Box<dyn Error>> {
-	let mut avg_w_weight = HashMap::<i64, f32>::new();
-	let mut avg_w_count = HashMap::<i64, i32>::new();
-	let mut avg_weight = 0.0;
+impl CsvData {
+	pub fn new() -> Result<CsvData, Box<dyn Error>> {
+		// checking if csv filepath is valid
+		let os_dir = {
+			match option_env!("XDG_CONFIG_HOME") {
+				None => env!("HOME"),
+				Some(dir) => dir,
+			}
+		};
+		let csv_dir_name = "wtcli";
+		let csv_file_name = "weight-data.csv";
 
-	let records: &Vec<Record> = &get_records()?;
-	for record in records.iter() {
-		avg_weight += &record.weight;
-		// gets weight for each week
-		avg_w_weight.insert(
-			record.week,
-			*avg_w_weight.get(&record.week).unwrap_or(&0.0) + record.weight,
-		);
-		// gets the number of recorded weights per week
-		avg_w_count.insert(
-			record.week,
-			*avg_w_count.get(&record.week).unwrap_or(&0) + 1,
-		);
-	}
-	// averages the weight of each week
-	for (key, val) in avg_w_weight.iter_mut() {
-		*val /= *avg_w_count.get(&key).unwrap_or(&0) as f32
-	}
+		let filedir = format!("{}/{}/", &os_dir, &csv_dir_name);
+		let filepath = format!("{}{}", &filedir, &csv_file_name);
 
-	let mut sorted_week_weight: Vec<(&i64, &f32)> = avg_w_weight.iter().collect();
-	sorted_week_weight.sort_by_key(|key| key.0);
+		if !Path::new(&filedir).exists() { create_dir(&filedir)?; }
+		if !Path::new(&filepath).exists() { File::create(&filepath)?; }
 
-	avg_weight /= records.len() as f32;
-	println!("\n\tAverage overall weight:\n\t{}", avg_weight);
-	println!("\n\tAverage weight per week:\n\tWeek\tWeight");
+		// reads records from the csv file
+		let mut rdr = csv::Reader::from_path(&filepath)?;
+		let records: Vec<Record> = rdr
+			.deserialize()
+			.collect::<Result<Vec<Record>, csv::Error>>()?;
 
-	for (key, val) in sorted_week_weight.iter_mut() {
-		println!("\t{}\t{}", key, val);
+		Ok( CsvData { filepath, records, } )
 	}
 
-	Ok(())
-}
+	pub fn append(&mut self, weight: f32) -> Result<(), Box<dyn Error>> {
+		// defaults if there are no records
+		let mut id: u32 = 1;
+		let mut week: i64 = 1;
 
-pub fn input(weight: f32) -> Result<(), Box<dyn Error>> {
-	let mut records: Vec<Record> = get_records()?;
-	let date = get_date()?.to_string();
+		let today = Utc::today();
+		let date = Utc
+			.ymd(today.year(), today.month(), today.day())
+			.format("%d/%m/%Y")
+			.to_string();
 
-	let mut week = 1;
-	if !records.is_empty() {
-		let last_date = &records.last().unwrap().date;
-		let last_week = &records.last().unwrap().week;
-		week = get_week(*last_week, &last_date, &date)?;
-		println!("{} {}", last_date, last_week);
+		if let Some(last_record) = self.records.last() {
+			id = last_record.id + 1;
+
+			let last_date = NaiveDate::parse_from_str(&last_record.date, "%d/%m/%Y")?;
+			let date = NaiveDate::parse_from_str(&date, "%d/%m/%Y")?;
+			week = last_record.week + (date - last_date).num_weeks();
+		};
+
+		let record = Record { id, date, week, weight };
+		self.records.push(record);
+		CsvData::save_data(&self)?;
+		Ok(())
 	}
 
-	let id: u32 = match records.last() {
-		Some(new_id) => new_id.id + 1,
-		None => 1,
-	};
-
-	let new_record = Record {
-		id,
-		date,
-		week,
-		weight,
-	};
-	records.push(new_record);
-
-	write_records(&records)?;
-	display()?;
-	Ok(())
-}
-
-pub fn modify(id: u32, weight: f32) -> Result<(), Box<dyn Error>> {
-	let mut records: Vec<Record> = get_records()?;
-
-	for record in records.iter_mut() {
-		if record.id == id {
+	pub fn modify(&mut self, id: u32, weight: f32) -> Result<(), Box<dyn Error>> {
+		if let Some(record) = self.records.get_mut(id as usize - 1) {
 			record.weight = weight;
+		};
+		self.save_data()?;
+		Ok(())
+	}
+
+	pub fn delete(&mut self, id: u32) -> Result<(), Box<dyn Error>> {
+		self.records.remove(id as usize - 1);
+		// fixing id numbers
+		for (i, record) in self.records.iter_mut().enumerate() {
+			record.id = i as u32 + 1;
 		}
+		self.save_data()?;
+		Ok(())
 	}
 
-	write_records(&records)?;
-	display()?;
-	Ok(())
-}
-
-pub fn delete(id: u32) -> Result<(), Box<dyn Error>> {
-	let mut records = get_records()?;
-	let i = id - 1;
-
-	records.remove(i.try_into().unwrap());
-	for (i, record) in records.iter_mut().enumerate() {
-		let i: u32 = (i + 1).try_into()?;
-		record.id = i;
-	}
-	write_records(&records)?;
-	display()?;
-	Ok(())
-}
-
-fn write_records(records: &Vec<Record>) -> Result<(), Box<dyn Error>> {
-	let csv_path = get_valid_path()?;
-	let mut wtr = csv::Writer::from_path(&csv_path)?;
-	for record in records {
-		wtr.serialize(&record)?;
-	}
-	wtr.flush()?;
-	Ok(())
-}
-
-fn get_records() -> Result<Vec<Record>, Box<dyn Error>> {
-	let csv_path = &get_valid_path()?;
-	let mut rdr = csv::Reader::from_path(csv_path)?;
-	let records: Vec<Record> = rdr
-		.deserialize()
-		.collect::<Result<Vec<Record>, csv::Error>>()?;
-	Ok(records)
-}
-
-fn get_date() -> Result<String, Box<dyn Error>> {
-	let dt = Utc::today();
-	let date = Utc
-		.ymd(dt.year(), dt.month(), dt.day())
-		.format("%d/%m/%Y")
-		.to_string();
-	Ok(date)
-}
-
-fn get_week(prev_week: i64, prev_date: &str, curr_date: &str) -> Result<i64, Box<dyn Error>> {
-	let prev_date = NaiveDate::parse_from_str(&prev_date, "%d/%m/%Y")?;
-	let curr_date = NaiveDate::parse_from_str(&curr_date, "%d/%m/%Y")?;
-
-	let weeks = (curr_date - prev_date).num_weeks();
-
-	let curr_week = prev_week + weeks;
-	Ok(curr_week)
-}
-
-fn get_valid_path() -> Result<String, std::io::Error> {
-	let csv_dir = format!("{}/{}/", OS_DIR, CSV_DIR_NAME);
-	let csv_path = format!("{}{}", csv_dir, CSV_FILE_NAME);
-
-	if !Path::new(&csv_dir).exists() {
-		create_dir(&csv_dir)?;
-	}
-	if !Path::new(&csv_path).exists() {
-		File::create(&csv_path)?;
+	pub fn show_all(&self) {
+		self.show_data();
+		self.show_summary();
 	}
 
-	Ok(csv_path)
+	pub fn show_data(&self) {
+		println!("\n\tData..");
+		println!("\n\tId\tDate\t\tWeek\tWeight(kg)");
+		self.records
+			.iter()
+			.for_each(|r|
+				println!("\t{}\t{}\t{}\t{}", r.id, r.date, r.week, r.weight)
+		);
+	}
+
+	pub fn show_summary(&self) {
+		println!("\n\tSummary..");
+		let mut weight: f32 = 0.0;
+		let mut weight_week = HashMap::<i64, f32>::new();
+		let mut count_week = HashMap::<i64, i32>::new();
+		self.records
+			.iter()
+			.for_each(|r| {
+				weight += &r.weight;
+
+			weight_week.insert(
+				r.week,
+				*weight_week.get(&r.week).unwrap_or(&0.0) + r.weight,
+			);
+			// gets the number of recorded weights per week
+			count_week.insert(
+				r.week,
+				*count_week.get(&r.week).unwrap_or(&0) + 1,
+			);
+
+		});
+
+		// averages the weight of each week
+		weight_week
+			.iter_mut()
+			.for_each(|(k, v)|
+				*v /= *count_week.get(&k).unwrap_or(&0) as f32
+			);
+
+		// sorting weights ascending by week
+		let mut weight_week = weight_week
+			.iter()
+			.collect::<Vec<(&i64, &f32)>>();
+		weight_week.sort_by_key(|key| key.0);
+
+		println!("\tAverage weight: {}", weight / self.records.len() as f32);
+		println!("\tAverage weight per week:");
+		println!("\tWeek\tWeight");
+		weight_week
+			.iter()
+			.for_each(|(k, v)|
+				println!("\t{}\t{}", k, v)
+		);
+	}
+
+	fn save_data(&self) -> Result<(), csv::Error> {
+		let mut writer = csv::Writer::from_path(&self.filepath)?;
+		for record in &self.records { writer.serialize(record)?; }
+		writer.flush()?;
+		Ok(())
+	}
+
 }
+

@@ -1,20 +1,42 @@
-use crate::clap::Parser;
-use std::error::Error;
+use crate::clap::{Parser, Subcommand};
 
-use crate::app;
-use crate::dataframe::{Args, Options};
 
-pub fn parse() -> Result<(), Box<dyn Error>> {
-	let args = Args::parse();
+#[derive(Parser)]
+#[clap(
+	author="Maciej Habasiński",
+	version,
+	about="CLI app for tracking weight over time using a csv file.",
+	long_about=None)]
 
-	match args.option {
-		Options::Display {} => app::display()?,
-		Options::Records {} => app::records()?,
-		Options::Summary {} => app::summary()?,
-		Options::Input { weight } => app::input(weight)?,
-		Options::Modify { id, weight } => app::modify(id, weight)?,
-		Options::Delete { id } => app::delete(id)?,
-	};
-
-	Ok(())
+pub struct Args {
+	#[clap(subcommand)]
+	pub option: Options,
 }
+
+#[derive(Subcommand)]
+pub enum Options {
+	/// Displays data and summary
+	All,
+	/// Displays data
+	Data,
+	/// Displays a summary of the data
+	Summary,
+	/// Deletes a record
+	Delete {
+		#[clap(short, long)]
+		id: u32,
+	},
+	/// Appends a new record
+	Input {
+		#[clap(short, long)]
+		weight: f32,
+	},
+	/// Modifies a record
+	Modify {
+		#[clap(short, long)]
+		id: u32,
+		#[clap(short, long)]
+		weight: f32,
+	},
+}
+
